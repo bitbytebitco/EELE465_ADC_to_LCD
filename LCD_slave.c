@@ -329,74 +329,43 @@ int main(void)
 
         if(action_select == 1){
 
-            sendByte(0b11000100, 0); // mov to Kelvin starting address
-            sendByte(0b00000110, 0); // entry mode set
-            renderPacket(0,2);
-            sendByte(0b11001010, 0); // mov to Celcius starting address
-            renderPacket(3,6);
-            action_select = 0; // end action
-
-
-            /*
-            int code = getCharCode();
-            if(code == -1){
-                //clear_display(); temporary
+            int code = getCharCode(packet[0]);
+            if(code == -1){ // #
+                clear_display();
+                LCDstartDisplay();
                 charCount = 0;
             } else if(code != 0){
-                P1OUT |= BIT1; // Turn on LED
-                if(code == 0b00101010){
-                    P1OUT &= ~BIT1; // turn off LED
+
+                if(code == 0b00101010) {        // Turn off LED if * pressed
+                    P1OUT &= ~BIT1;
+                } else {
+                    P1OUT |= BIT1;              // Turn on LED if any other character pressed
+
+                    sendByte(0b11000100, 0); // mov to Kelvin starting address
+                    sendByte(0b00000110, 0); // entry mode set
+                    renderPacket(0,2);
+                    sendByte(0b11001010, 0); // mov to Celcius starting address
+                    renderPacket(3,6);
+                    action_select = 0; // end action
+
                 }
 
-//                charCount++;
-//
-//                if(charCount < 5) {
-//                    sendByte(code, 1);              // Display Kelvin temperature
-//                } else if(charCount == 5) {
-//                    for(i = 0; i < 8; i++) {
-//                        shiftCursorForward();       // Shift cursor forward to four spaces before °C
-//                    }
-//                    sendByte(code, 1);
-//                } else if(charCount > 5 && charCount < 9) {
-//                    sendByte(code, 1);
-//                } else {
-//                    clear_display();                    // Clear display
-//                    LCDstartDisplay();                  // Reset to starting screen for next values
-//                    charCount = 0;
-//                }
-//                action_select = 0;
-
-                /*
-                if(charCount == 0){
-                    sendByte(0b11000100, 0); // mov
-                    sendByte(0b00000110, 0); // entry mode set
-                    sendByte(code, 1); // display character
-                } else if(charCount < 3){
-                    sendByte(code, 1); // display character
-                } else if(charCount == 3) {
-                    sendByte(0b11001010, 0); // mov
-                    sendByte(0b00000110, 0); // entry mode set
-                    //sendByte(code, 1); // display character
-                } else if(charCount < 7){
-                    sendByte(code, 1); // display character
-                } else if(charCount == 7) {
-                    charCount = 0;
-                }
-                charCount++;
+                /*sendByte(code, 1); // display character
                 action_select = 0;
-                */
+                charCount++;
+                if(charCount == 4){
+                    shiftCursorForward();
+                }
+                if(charCount == 32){
+                    clear_display();
+                    charCount = 0;
+                } else if(charCount == 16){
+                    setCursorSecondRow();
+                }*/
+            }
 
-//                sendByte(code, 1); // display character
-//                charCount++;
-//                action_select = 0;
-//                if(charCount == 32){
-//                    clear_display();
-//                    charCount = 0;
-//                } else if(charCount == 16){
-//                    setCursorSecondRow();
-//                }
 
-            //}
+
 
 
         }
