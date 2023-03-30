@@ -14,7 +14,7 @@ volatile float ADC[9];
 
 volatile unsigned char transmit_key;
 
-char packet[]= {0x01, 0x02, 0x03, 0x04};
+char packet[]= {0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x04};
 volatile unsigned char col_holding, row_holding;
 volatile unsigned char pressed_key;
 int lock_state = 0;
@@ -31,8 +31,8 @@ void initI2C_master(){
      //UCB1I2CSA = 0x0068;          // Slave address = 0x68
 
      UCB1CTLW1 |= UCASTP_2;      // enable automatic stop bit
-     //UCB1TBCNT = sizeof(packet);  // Transfer byte count
-     UCB1TBCNT = 1;  // Transfer byte count
+     UCB1TBCNT = sizeof(packet);  // Transfer byte count
+//     UCB1TBCNT = 1;  // Transfer byte count
 
      // setup ports
      P6DIR |= (BIT6 | BIT5 | BIT4);  // set P6.6-4 as OUTPUT
@@ -212,48 +212,45 @@ void transmitTemperature() {
 
     int digit, j;
 
+    avg = round(unrounded_avg+273.15);
+
+    avg = abs(avg);
+
+    // Kelvin average i.e. 296
+
+   for(i = 0; i < 3; i++) {
+       if(i == 0) {
+           digit = avg / 100;
+           avg = avg - digit*100;
+       } else if(i == 1) {
+           digit = avg / 10;
+           avg = avg - digit*10;
+       } else if(i == 2) {
+           digit = avg;
+           avg = 0;
+       }
+           packet[i] = getCharKey(digit);
+   }
+
+    avg = round(unrounded_avg*10);
     avg = fabs(avg);
-    unrounded_avg = fabs(unrounded_avg);
 
-    if((unrounded_avg / 100) > 1) {
-        for(i = 0; i < 4; i++) {
-            if(i == 0) {
-                digit = avg / 100;
-                avg = avg - digit*100;
-            } else if(i == 1) {
-                digit = avg / 10;
-                avg = avg - digit*10;
-            } else if(i == 2) {
-                digit = avg;
-                avg = 0;
-            } else if(i == 3) {
-                digit = -2;
-            }
+    //  Celsius average i.e. 26.2
 
-//            transmit_key = getCharKey(digit);
-            packet[i] = getCharKey(digit);
-
+    for(i = 3; i < 7; i++) {
+        if(i == 3) {
+            digit = avg / 100;
+            avg = avg - digit*100;
+        } else if(i == 4) {
+            digit = avg / 10;
+            avg = avg - digit*10;
+        } else if(i == 5) {
+            digit = -1;
+        } else if(i == 6) {
+            digit = avg;
+            avg = 0;
         }
-    } else if((unrounded_avg / 10) > 1) {
-        //avg = avg * 10;
-        for(i = 0; i < 4; i++) {
-            if(i == 0) {
-                digit = avg / 100;
-                avg = avg - digit*100;
-            } else if(i == 1) {
-                digit = avg / 10;
-                avg = avg - digit*10;
-            } else if(i == 2) {
-                digit = -1;
-            } else if(i == 3) {
-                digit = avg;
-                avg = 0;
-            }
-
-//            getCharKey(digit);
-            packet[i] = getCharKey(digit);
-
-        }
+        packet[i] = getCharKey(digit);
     }
 
     //transmit();                             // Transmit temperature packet to LCD slave
@@ -261,27 +258,18 @@ void transmitTemperature() {
 }
 
 void getAverage() {
-
     if(sampleCount > n - 1  && n!=0) {                          // Transmit temperature average if enough samples have been recorded for desired window size
 
             for(i = 0; i < n; i++) {                                // Calculate moving average for window size n
                 avg = avg + ADC[i];
             }
-            unrounded_avg = (avg / n) + 273.15;                     // Store unrounded average
 
-            avg = round(unrounded_avg);                             // Calculate Kelvin temperature and round to ones place
-            transmitTemperature();
-            unrounded_avg = unrounded_avg - 273.15;
-            avg = round((unrounded_avg) * 10);              // Calculature Celsius temperature and round to tenths place
+            unrounded_avg = avg / 3;
             transmitTemperature();
 
-        } else if(sampleCount > 2) {                                            // Transmit temperature average with window of 3 if at least 3 samples have been recorded, but user has not set n/set n > 3
-            unrounded_avg = ((ADC[0] + ADC[1] + ADC[2]) / 3) + 273.15;          // Store unrounded average
-
-            avg = round(unrounded_avg);                                         // Calculate Kelvin temperature and round to ones place
-            transmitTemperature();
-            unrounded_avg = unrounded_avg - 273.15;
-            avg = round((unrounded_avg) * 10);                         // Calculature Celsius temperature and round to tenths place
+        } else if(sampleCount > 2) {
+            // Transmit temperature average with window of 3 if at least 3 samples have been recorded, but user has not set n/set n > 3
+            unrounded_avg = ((ADC[0] + ADC[1] + ADC[2]) / 3);
             transmitTemperature();
 
         }
@@ -326,8 +314,8 @@ int main(void)
         //transmitTemperature();
         //getAverage();
         UCB1CTLW0 |= UCTXSTT;   // generate START condition
-        for(k=0; k<=5;k++){
-            for(i=0;i<=5000;i++){}
+        for(k=0; k<=20;k++){
+            for(i=0;i<=10000;i++){}
         }
 
 //        for(k=0; k<=1;k++){
@@ -438,6 +426,8 @@ __interrupt void ISR_TB1_CCR0(void) {
     if(tcnt == 25){
         sampleCount++;
         sampleSensor();                                             // Sample temperature sensor
+
+        getAverage();
 
         tcnt = 0;
     }
