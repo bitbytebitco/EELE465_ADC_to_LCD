@@ -14,7 +14,7 @@ volatile float ADC[9];
 
 volatile unsigned char transmit_key;
 
-char packet[]= {0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x04};
+char packet[] = {0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A};         // 7 byte packet for transmission
 volatile unsigned char col_holding, row_holding;
 volatile unsigned char pressed_key;
 int lock_state = 0;
@@ -32,7 +32,6 @@ void initI2C_master(){
 
      UCB1CTLW1 |= UCASTP_2;      // enable automatic stop bit
      UCB1TBCNT = sizeof(packet);  // Transfer byte count
-//     UCB1TBCNT = 1;  // Transfer byte count
 
      // setup ports
      P6DIR |= (BIT6 | BIT5 | BIT4);  // set P6.6-4 as OUTPUT
@@ -258,34 +257,19 @@ void transmitTemperature() {
 }
 
 void getAverage() {
-    if(sampleCount > n - 1  && n!=0) {                          // Transmit temperature average if enough samples have been recorded for desired window size
+    if(sampleCount > n - 1  && n > 0) {                          // Transmit temperature average if enough samples have been recorded for desired window size
 
-            for(i = 0; i < n; i++) {                                // Calculate moving average for window size n
+            for(i = 0; i < n; i++) {                            // Calculate moving average for window size n
                 avg = avg + ADC[i];
             }
 
-            unrounded_avg = avg / 3;
+            unrounded_avg = avg / n;
             transmitTemperature();
 
-        } else if(sampleCount > 2) {
-            // Transmit temperature average with window of 3 if at least 3 samples have been recorded, but user has not set n/set n > 3
-            unrounded_avg = ((ADC[0] + ADC[1] + ADC[2]) / 3);
-            transmitTemperature();
+    }
 
-        }
-
-        avg = 0;                                                    // Reset moving average
-        sample = 0;                                                 // Reset sample indicator
-}
-
-transmit(){
-    UCB1I2CSA = 0x0068;     // Slave address = 0x58
-    UCB1CTLW0 |= UCTXSTT;   // generate START condition
-    while((UCB1IFG & UCSTPIFG)==0);
-    UCB1IFG &= ~UCSTPIFG;
-
-    UCB1IE &= ~UCTXIE0;
-    for(i=0;i<=2000;i++){}
+   avg = 0;                                                    // Reset moving average
+   sample = 0;                                                 // Reset sample indicator
 }
 
 int main(void)
@@ -381,14 +365,69 @@ int is_unlocked(char key){
     }
 }
 
+//void keyPressedAction(char pressed_key) {
+//    if(is_unlocked(pressed_key) == 1){
+//        packet[0] = pressed_key;
+//        UCB1IE |= UCTXIE0;
+//    }
+//
+//    columnInput();
+//    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Clear the P3 interrupt flags
+//
+//}
+
 void keyPressedAction(char pressed_key) {
     if(is_unlocked(pressed_key) == 1){
-        packet[0] = pressed_key;
-        UCB1IE |= UCTXIE0;
+        if(pressed_key == 0x11 || pressed_key == 0x17) {        // If #/*, transmit to LCD slave
+            packet[0] = pressed_key;                            // Place #/* first in packet
+            for(i = 1; i < 7; i++) {
+                packet[i] = 0x0A;                               // Fill the rest of packet with don't care values
+            }
+            UCB1IE |= UCTXIE0;                                  // Enable I2C B0 TX interrupt
+        } else {
+            switch(pressed_key) {           // If not */#, set n value to key pressed (0-9)
+                case 0x87:
+                    n = 1;
+                    break;
+                case 0x83:
+                    n = 2;
+                    break;
+                case 0x81:
+                    n = 3;
+                    break;
+                case 0x47:
+                    n = 4;
+                    break;
+                case 0x43:
+                    n = 5;
+                    break;
+                case 0x41:
+                    n = 6;
+                    break;
+                case 0x27:
+                    n = 7;
+                    break;
+                case 0x23:
+                    n = 8;
+                    break;
+                case 0x21:
+                    n = 9;
+                    break;
+                case 0x13:
+                    n = 0;
+                    for(i = 0; i < 7; i++) {
+                        packet[i] = 0x0A;
+                    }
+                    break;
+                default:
+                    n = 0;
+                    break;
+            }
+        }
     }
 
-    columnInput();
-    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Clear the P3 interrupt flags
+    columnInput();                              // Reset keypad columns to be inputs
+    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3);      // Clear the P3 interrupt flags
 
 }
 
@@ -403,7 +442,8 @@ __interrupt void ISR_PORT3(void){
 #pragma vector=TIMER0_B0_VECTOR
 __interrupt void ISR_TB0_CCR0(void){
 
-    TB0CCTL0 &= ~CCIE;  // Disable TimerB0
+    TB0CCTL0 &= ~CCIE;      // Disable TimerB0
+    UCB1IE &= ~UCTXIE0;     // Disable I2C B0 TX interrupt
 
     col_holding = P3IN;
 
@@ -413,6 +453,8 @@ __interrupt void ISR_TB0_CCR0(void){
     pressed_key = col_holding + row_holding;
 
     keyPressedAction(pressed_key);
+
+    UCB1IE |= UCTXIE0;      // Enable I2C B0 TX interrupt
 
 }
 
@@ -447,11 +489,6 @@ __interrupt void ISR_ADC(void) {
             break;
     }
 }
-
-//#pragma vector=EUSCI_B1_VECTOR
-//__interrupt void EUSCI_B1_TX_ISR(void){
-//    UCB1TXBUF = packet[0];
-//}
 
 #pragma vector=EUSCI_B1_VECTOR
 __interrupt void EUSCI_B1_TX_ISR(void){
