@@ -2,6 +2,10 @@
 #include <msp430.h> 
 
 int Rx_Command = 0;
+
+volatile int j = 0;
+volatile char packet[]= {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+
 volatile int action_select = 0;
 volatile int ms_thresh, ms_count, ms_flag;
 
@@ -183,7 +187,7 @@ void LCDsetup() {
 
     sendByte(0b00101100, 0); // function set interface 4-bit & spec display lines and fonts
 
-    sendByte(0b00001111, 0); // display on
+    sendByte(0b00001100, 0); // display on (cursor not shown)
 
     sendByte(0b00000001, 0); // clear display
 
@@ -191,67 +195,9 @@ void LCDsetup() {
 
 }
 
-//int getCharCode(){
-//    int ret;
-//    switch(Rx_Command){
-//        case 0x80: // A
-//            ret = 0b01000001;
-//            break;
-//        case 0x40: // B
-//            ret =  0b01000010;
-//            break;
-//        case 0x20: // C
-//            ret =  0b01000011;
-//            break;
-//        case 0x10: // D
-//            ret =  0b01000100;
-//            break;
-//        case 0x87: // 1
-//            ret =  0b00110001;
-//            break;
-//        case 0x83: // 2
-//            ret =  0b00110010;
-//            break;
-//        case 0x81: // 3
-//            ret =  0b00110011;
-//            break;
-//        case 0x47: // 4
-//            ret =  0b00110100;
-//            break;
-//        case 0x43: // 5
-//            ret =  0b00110101;
-//            break;
-//        case 0x41: // 6
-//            ret =  0b00110110;
-//            break;
-//        case 0x27: // 7
-//            ret =  0b00110111;
-//            break;
-//        case 0x23: // 8
-//            ret =  0b00111000;
-//            break;
-//        case 0x21: // 9
-//            ret =  0b00111001;
-//            break;
-//        case 0x17: // *
-//            ret =  0b00101010;
-//            break;
-//        case 0x13: // 0
-//            ret =  0b00110000;
-//            break;
-//        case 0x11: // #
-//            ret =  -1;
-//            break;
-//        default:
-//            ret = 0;
-//            break;
-//    }
-//    return ret;
-//}
-
-int getCharCode() {
+int getCharCode(int in) {
     int ret;
-    switch(Rx_Command) {
+    switch(in) {
         /*case 0x80: // A       Don't need cases A-D
             ret = 0b01000001;
             break;
@@ -318,24 +264,24 @@ void LCDstartDisplay() {
     sendByte(0b01110100, 1);        // Display t
     sendByte(0b01100101, 1);        // Display e
     sendByte(0b01110010, 1);        // Display r
-    sendByte(0b01000000, 1);        // Display " "
+    shiftCursorForward();           // Display " "
     sendByte(0b01101110, 1);        // Display n
     sendByte(0b00111010, 1);        // Display :
     setCursorSecondRow();
     sendByte(0b01010100, 1);        // Display T
-    sendByte(0b01000000, 1);        // Display " "
+    shiftCursorForward();           // Display " "
     sendByte(0b00111101, 1);        // Display =
 
     int i;
     for(i = 0; i <= 3; i++) {
-        sendByte(0b01000000, 1);   // Display " " 4 times
+        shiftCursorForward();           // Display " " 4 times
     }
 
     sendByte(0b11011111, 1);        // Display °
     sendByte(0b01001011, 1);        // Display K
 
-    for(i = 0; i <= 5; i++) {
-        sendByte(0b01000000, 1);    // Display " " 5 times
+    for(i = 0; i < 5; i++) {
+        shiftCursorForward();           // Display " " 5 times
     }
 
     sendByte(0b11011111, 1);        // Display °
@@ -347,6 +293,19 @@ void LCDstartDisplay() {
         sendByte(0b00000100, 0);       // Shift cursor back to three spaces before °K
     }
 
+}
+
+renderPacket(int start, int stop){
+    int m;
+    int charCount = 0;
+    UCB0IE &= ~(UCTXIE0 | UCRXIE0 | UCSTPIE); // enable
+    for(m=start;m<=stop;m++){
+        int code = getCharCode(packet[m]);
+        sendByte(code, 1); // display character
+        charCount++;
+        delay1000();
+    }
+    UCB0IE |= (UCTXIE0 | UCRXIE0 | UCSTPIE); // enable
 }
 
 void shiftCursorForward(){
@@ -361,18 +320,27 @@ int main(void)
     delay_ms(20);
     LCDsetup();
 
-//    sendByte(0b00001111, 0); // display on
     clear_display();
 
     LCDstartDisplay();
 
-    int i;
+    int i ,m, k;
     while(1){
 
         if(action_select == 1){
+
+            sendByte(0b11000100, 0); // mov to Kelvin starting address
+            sendByte(0b00000110, 0); // entry mode set
+            renderPacket(0,2);
+            sendByte(0b11001010, 0); // mov to Celcius starting address
+            renderPacket(3,6);
+            action_select = 0; // end action
+
+
+            /*
             int code = getCharCode();
             if(code == -1){
-                clear_display();
+                //clear_display(); temporary
                 charCount = 0;
             } else if(code != 0){
                 P1OUT |= BIT1; // Turn on LED
@@ -380,14 +348,13 @@ int main(void)
                     P1OUT &= ~BIT1; // turn off LED
                 }
 
-
 //                charCount++;
 //
 //                if(charCount < 5) {
 //                    sendByte(code, 1);              // Display Kelvin temperature
 //                } else if(charCount == 5) {
 //                    for(i = 0; i < 8; i++) {
-//                        sendByte(0b00000101, 0);       // Shift cursor forward to four spaces before °C
+//                        shiftCursorForward();       // Shift cursor forward to four spaces before °C
 //                    }
 //                    sendByte(code, 1);
 //                } else if(charCount > 5 && charCount < 9) {
@@ -399,20 +366,39 @@ int main(void)
 //                }
 //                action_select = 0;
 
-                sendByte(code, 1); // display character
-                action_select = 0;
-                charCount++;
-                if(charCount == 4){
-                    shiftCursorForward();
-
-                }
-                if(charCount == 32){
-                    clear_display();
+                /*
+                if(charCount == 0){
+                    sendByte(0b11000100, 0); // mov
+                    sendByte(0b00000110, 0); // entry mode set
+                    sendByte(code, 1); // display character
+                } else if(charCount < 3){
+                    sendByte(code, 1); // display character
+                } else if(charCount == 3) {
+                    sendByte(0b11001010, 0); // mov
+                    sendByte(0b00000110, 0); // entry mode set
+                    //sendByte(code, 1); // display character
+                } else if(charCount < 7){
+                    sendByte(code, 1); // display character
+                } else if(charCount == 7) {
                     charCount = 0;
-                } else if(charCount == 16){
-                    setCursorSecondRow();
                 }
-            }
+                charCount++;
+                action_select = 0;
+                */
+
+//                sendByte(code, 1); // display character
+//                charCount++;
+//                action_select = 0;
+//                if(charCount == 32){
+//                    clear_display();
+//                    charCount = 0;
+//                } else if(charCount == 16){
+//                    setCursorSecondRow();
+//                }
+
+            //}
+
+
         }
     }
 
@@ -424,8 +410,14 @@ __interrupt void EUSCI_B0_TX_ISR(void){
 
     switch(UCB0IV){
         case 0x16:  // receiving
-                Rx_Command = UCB0RXBUF;    // Retrieve byte from buffer
-                action_select = 1;
+                //Rx_Command = UCB0RXBUF;    // Retrieve byte from buffer
+                if(j == 7){
+                   j = 0;
+                   action_select = 1;
+                }
+                packet[j] = UCB0RXBUF;    // Retrieve byte from buffer
+                j++;
+
             break;
         case 0x18:
             break;
