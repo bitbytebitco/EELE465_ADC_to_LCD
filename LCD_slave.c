@@ -314,6 +314,7 @@ int main(void)
                 code = 0;
                 clear_display();
                 LCDstartDisplay();
+                P1OUT |= BIT1;
                 charCount = 0;
                 action_select = 0;
             } else if(code != 0){
@@ -331,11 +332,8 @@ int main(void)
                     sendByte(0b10001001, 0);    // Move to n address
                     renderPacket(7,7);
 
-
-                    action_select = 0;          // End action
-
                 }
-
+                action_select = 0;          // End action
             }
 
         }
