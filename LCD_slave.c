@@ -1,18 +1,17 @@
-
 #include <msp430.h> 
 
 int Rx_Command = 0;
 
 volatile int j = 0;
-volatile char packet[]= {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+volatile char packet[]= {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};     // 7 byte packet for receiving
 
 volatile int action_select = 0;
 volatile int ms_thresh, ms_count, ms_flag;
 
 void initI2C_slave(){
-    UCB0CTLW0 |= UCSWRST;       // SW RESET enabled
-    UCB0CTLW0 |= UCMODE_3 | UCSYNC;      // Put into I2C mode
-    UCB0I2COA0 = 0x0068 | UCOAEN; // Set slave address + enable
+    UCB0CTLW0 |= UCSWRST;               // SW RESET enabled
+    UCB0CTLW0 |= UCMODE_3 | UCSYNC;     // Put into I2C mode
+    UCB0I2COA0 = 0x0068 | UCOAEN;       // Set slave address + enable
 
     // setup ports
     P1SEL1 &= ~BIT3;            // P1.3 SCL
@@ -23,37 +22,36 @@ void initI2C_slave(){
 
     UCB0CTLW0 &= ~UCSWRST;      // SW RESET OFF
 
-    UCB0IE |= UCTXIE0 | UCRXIE0 | UCSTPIE;          // enable I2C B0 Tx/Rx/Stop IRQs
+    UCB0IE |= UCTXIE0 | UCRXIE0 | UCSTPIE;          // Enable I2C B0 Tx/Rx/Stop IRQs
 
-    PM5CTL0 &= ~LOCKLPM5;       // turn on I/O
+    PM5CTL0 &= ~LOCKLPM5;       // Turn on I/O
     UCB0CTLW0 &= ~UCSWRST;      // SW RESET OFF
 }
 
 void initTimerB0compare(){
     // setup TB0
-    TB0CTL |= TBCLR;        // Clear TB0
-    TB0CTL |= TBSSEL__SMCLK; // select SMCLK
-    TB0CTL |= MC__UP;       // UP mode
+    TB0CTL |= TBCLR;            // Clear TB0
+    TB0CTL |= TBSSEL__SMCLK;    // Select SMCLK
+    TB0CTL |= MC__UP;           // UP mode
 
-    TB0CCR0 = 1045;         // set CCR0 value (period) - (1045 for 1ms)
-    //TB0CCTL0 |= CCIE;       // local IRQ enable for CCR0
-    TB0CCTL0 &= ~CCIFG;     // clear CCR0 flag
+    TB0CCR0 = 1045;             // Set CCR0 value (Period = 1045 for 1ms)
+    TB0CCTL0 &= ~CCIFG;         // Clear CCR0 flag
 }
 
 void init(){
-    WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
+    WDTCTL = WDTPW | WDTHOLD;                   // Stop watchdog timer
 
-    P1DIR |= (BIT4 | BIT5 | BIT6 | BIT7);  // set P1.4 Output for DB4-DB7 (LCD)
-    P1OUT &= ~(BIT4 | BIT5 | BIT6 | BIT7); // clear P1.4-7
+    P1DIR |= (BIT4 | BIT5 | BIT6 | BIT7);       // Set P1.4 Output for DB4-DB7 (LCD)
+    P1OUT &= ~(BIT4 | BIT5 | BIT6 | BIT7);      // Clear P1.4-7
 
-    P2DIR |= BIT7;  // set P2.7 output for RS (LCD) - (RS = 0 instruction, RS = 1 data)
-    P2OUT &= ~BIT7; // clear P2.7
+    P2DIR |= BIT7;      // Set P2.7 output for RS (LCD) - (RS = 0 instruction, RS = 1 data)
+    P2OUT &= ~BIT7;     // Clear P2.7
 
-    P2DIR |= BIT6;  // set P2.6 output for E (LCD), data starts on falling edge
-    P2OUT &= ~BIT6; // clear P2.6
+    P2DIR |= BIT6;      // Set P2.6 output for E (LCD), data starts on falling edge
+    P2OUT &= ~BIT6;     // Clear P2.6
 
-    P1DIR |= BIT1;  // P1.1 LED output
-    P1OUT &= ~BIT1; // clear P1.1
+    P1DIR |= BIT1;      // P1.1 LED output
+    P1OUT &= ~BIT1;     // Clear P1.1
 
     initI2C_slave();
     initTimerB0compare();
@@ -68,30 +66,30 @@ void delay1000(){
 }
 
 void configure(){
-    P2OUT &= ~BIT7; // clear RS
-    P1OUT |= (BIT4 | BIT5); // set P1.4-5
-    P1OUT &= ~(BIT6 | BIT7); // P1.6-7
+    P2OUT &= ~BIT7;                     // Clear RS
+    P1OUT |= (BIT4 | BIT5);             // Set P1.4-5
+    P1OUT &= ~(BIT6 | BIT7);            // P1.6-7
 }
 
 void configure2(){
-    P2OUT &= ~BIT7; // clear RS
-    P1OUT |= BIT5; // set P1.5
-    P1OUT &= ~(BIT4 | BIT6 | BIT7);// clear P1.4, P1.6-7
+    P2OUT &= ~BIT7;                     // Clear RS
+    P1OUT |= BIT5;                      // Set P1.5
+    P1OUT &= ~(BIT4 | BIT6 | BIT7);     // Clear P1.4, P1.6-7
 }
 
 void latch(){
-    P2OUT |= BIT6; // set E bit (LCD)
+    P2OUT |= BIT6;              // Set E bit (LCD)
     delay1000();
-    P2OUT &= ~BIT6; // reset E bit (LCD)
+    P2OUT &= ~BIT6;             // Reset E bit (LCD)
 }
 
 void delay_ms(int ms){
     ms_flag = 0;
     ms_count = 0;
     ms_thresh = ms;
-    TB0CCTL0 |= CCIE;       // local IRQ enable for CCR0
+    TB0CCTL0 |= CCIE;           // Local IRQ enable for CCR0
     while(ms_flag != 1){}
-    TB0CCTL0 &= ~CCIE;       // disable CCR0
+    TB0CCTL0 &= ~CCIE;          // Disable CCR0
 }
 
 
@@ -137,9 +135,9 @@ void clearNibbleBit(int n) {
 
 void sendNibble(unsigned short byte, int rs) {
     if(rs == 1){
-        P2OUT |= BIT7; // set RS
+        P2OUT |= BIT7;      // Set RS
     } else {
-        P2OUT &= ~BIT7; // set RS
+        P2OUT &= ~BIT7;     // Set RS
     }
 
     int k,n;
@@ -181,35 +179,23 @@ void LCDsetup() {
         delay_ms(10);
     }
 
-    configure2(); // funcset interface 4 bit
+    configure2();               // Funcset interface 4 bit
     latch();
     delay_ms(10);
 
-    sendByte(0b00101100, 0); // function set interface 4-bit & spec display lines and fonts
+    sendByte(0b00101100, 0);    // Function set interface 4-bit & spec display lines and fonts
 
-    sendByte(0b00001100, 0); // display on (cursor not shown)
+    sendByte(0b00001100, 0);    // Display on (cursor not shown)
 
-    sendByte(0b00000001, 0); // clear display
+    sendByte(0b00000001, 0);    // Clear display
 
-    sendByte(0b00000110, 0); // entry mode set
+    sendByte(0b00000110, 0);    // Entry mode set
 
 }
 
 int getCharCode(int in) {
     int ret;
     switch(in) {
-        /*case 0x80: // A       Don't need cases A-D
-            ret = 0b01000001;
-            break;
-        case 0x40: // B
-            ret =  0b01000010;
-            break;
-        case 0x20: // C
-            ret =  0b01000011;
-            break;
-        case 0x10: // D
-            ret =  0b01000100;
-            break;*/
         case 0x01: // 1
             ret =  0b00110001;
             break;
@@ -274,38 +260,32 @@ void LCDstartDisplay() {
 
     int i;
     for(i = 0; i <= 3; i++) {
-        shiftCursorForward();           // Display " " 4 times
+        shiftCursorForward();       // Display " " 4 times
     }
 
     sendByte(0b11011111, 1);        // Display °
     sendByte(0b01001011, 1);        // Display K
 
     for(i = 0; i < 5; i++) {
-        shiftCursorForward();           // Display " " 5 times
+        shiftCursorForward();       // Display " " 5 times
     }
 
     sendByte(0b11011111, 1);        // Display °
     sendByte(0b01000011, 1);        // Display C
-
-    // Need to shift cursor back to three spaces before °K
-
-    for(i = 0; i <= 10; i++) {
-        sendByte(0b00000100, 0);       // Shift cursor back to three spaces before °K
-    }
 
 }
 
 renderPacket(int start, int stop){
     int m;
     int charCount = 0;
-    UCB0IE &= ~(UCTXIE0 | UCRXIE0 | UCSTPIE); // enable
+    UCB0IE &= ~(UCTXIE0 | UCRXIE0 | UCSTPIE);   // Disable
     for(m=start;m<=stop;m++){
         int code = getCharCode(packet[m]);
-        sendByte(code, 1); // display character
+        sendByte(code, 1);                      // Display character
         charCount++;
         delay1000();
     }
-    UCB0IE |= (UCTXIE0 | UCRXIE0 | UCSTPIE); // enable
+    UCB0IE |= (UCTXIE0 | UCRXIE0 | UCSTPIE);    // Enable
 }
 
 void shiftCursorForward(){
@@ -327,46 +307,36 @@ int main(void)
     int i ,m, k;
     while(1){
 
-        if(action_select == 1){
+        if(action_select == 1){                 // Perform action based on received data from master (display temperature, reset screen, toggle LED)
 
             int code = getCharCode(packet[0]);
-            if(code == -1){ // #
+            if(code == -1){                      // Clear LCD and reset default display if '#' received
+                code = 0;
                 clear_display();
                 LCDstartDisplay();
                 charCount = 0;
+                action_select = 0;
             } else if(code != 0){
-
-                if(code == 0b00101010) {        // Turn off LED if * pressed
+                if(code == 0b00101010) {        // Turn off LED if '*' received
                     P1OUT &= ~BIT1;
                 } else {
                     P1OUT |= BIT1;              // Turn on LED if any other character pressed
 
-                    sendByte(0b11000100, 0); // mov to Kelvin starting address
-                    sendByte(0b00000110, 0); // entry mode set
+                    sendByte(0b11000100, 0);    // Move to Kelvin starting address
+                    sendByte(0b00000110, 0);    // Entry mode set
                     renderPacket(0,2);
-                    sendByte(0b11001010, 0); // mov to Celcius starting address
+                    sendByte(0b11001010, 0);    // Move to Celcius starting address
                     renderPacket(3,6);
-                    action_select = 0; // end action
+
+                    sendByte(0b10001001, 0);    // Move to n address
+                    renderPacket(7,7);
+
+
+                    action_select = 0;          // End action
 
                 }
 
-                /*sendByte(code, 1); // display character
-                action_select = 0;
-                charCount++;
-                if(charCount == 4){
-                    shiftCursorForward();
-                }
-                if(charCount == 32){
-                    clear_display();
-                    charCount = 0;
-                } else if(charCount == 16){
-                    setCursorSecondRow();
-                }*/
             }
-
-
-
-
 
         }
     }
@@ -378,13 +348,12 @@ int main(void)
 __interrupt void EUSCI_B0_TX_ISR(void){
 
     switch(UCB0IV){
-        case 0x16:  // receiving
-                //Rx_Command = UCB0RXBUF;    // Retrieve byte from buffer
-                if(j == 7){
+        case 0x16:                           // Receiving
+                if(j == sizeof(packet)){
                    j = 0;
-                   action_select = 1;
+                   action_select = 1;       // Display temperature or perform action for #/*
                 }
-                packet[j] = UCB0RXBUF;    // Retrieve byte from buffer
+                packet[j] = UCB0RXBUF;      // Retrieve byte from buffer
                 j++;
 
             break;
@@ -392,7 +361,7 @@ __interrupt void EUSCI_B0_TX_ISR(void){
             break;
     }
 
-    UCB0IFG &= ~UCTXIFG0;   // clear flag to allow I2C interrupt
+    UCB0IFG &= ~UCTXIFG0;                   // Clear flag to allow I2C interrupt
 }
 
 #pragma vector=TIMER0_B0_VECTOR
