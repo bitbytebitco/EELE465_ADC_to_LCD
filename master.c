@@ -7,36 +7,36 @@ int j = 0;
 
 volatile int i, n, sampleCount;
 volatile int sample = 0;
-volatile int tcnt = 0;
 volatile float avg;
 volatile float unrounded_avg = 0;
 volatile float ADC[9];
 
+unsigned int ADC_value;
+
+volatile int sensor_ms_count = 0;
+volatile int ms_thresh, ms_count, ms_flag;
+
 volatile unsigned char transmit_key;
 
-char packet[] = {0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A};         // 7 byte packet for transmission
+char packet[] = {0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A};         // 8 byte packet for transmission
 volatile unsigned char col_holding, row_holding;
 volatile unsigned char pressed_key;
 int lock_state = 0;
 
 void initI2C_master(){
-     UCB1CTLW0 |= UCSWRST;       // SW RESET ON
+     UCB1CTLW0 |= UCSWRST;          // SW RESET ON
 
-     UCB1CTLW0 |= UCSSEL_3;      // SMCLK
-     UCB1BRW = 10;               // prescalar to 10
+     UCB1CTLW0 |= UCSSEL_3;         // SMCLK
+     UCB1BRW = 10;                  // Prescalar to 10
 
-     UCB1CTLW0 |= UCMODE_3;      // Put into I2C mode
-     UCB1CTLW0 |= UCMST;         // set as MASTER
-     UCB1CTLW0 |= UCTR;          // Put into Tx mode
-     //UCB1I2CSA = 0x0068;          // Slave address = 0x68
+     UCB1CTLW0 |= UCMODE_3;         // Put into I2C mode
+     UCB1CTLW0 |= UCMST;            // Set as MASTER
+     UCB1CTLW0 |= UCTR;             // Put into Tx mode
 
-     UCB1CTLW1 |= UCASTP_2;      // enable automatic stop bit
-     UCB1TBCNT = sizeof(packet);  // Transfer byte count
+     UCB1CTLW1 |= UCASTP_2;         // Enable automatic stop bit
+     UCB1TBCNT = sizeof(packet);    // Transfer byte count
 
-     // setup ports
-     P6DIR |= (BIT6 | BIT5 | BIT4);  // set P6.6-4 as OUTPUT
-     P6OUT &= ~(BIT6 | BIT5 | BIT4); // clear P6.6-4
-
+     // Setup ports
      P4SEL1 &= ~BIT7;            // P4.7 SCL
      P4SEL0 |= BIT7;
 
@@ -44,31 +44,35 @@ void initI2C_master(){
      P4SEL1 &= ~BIT6;            // P4.6 SDA
      P4SEL0 |= BIT6;
 
-     PM5CTL0 &= ~LOCKLPM5;       // turn on I/O
+     PM5CTL0 &= ~LOCKLPM5;       // Turn on I/O
      UCB1CTLW0 &= ~UCSWRST;      // SW RESET OFF
 
-     //UCB1IE |= UCTXIE0;          // enable I2C B0 Tx IRQ
 }
 
-void initTimerB0compare(){
-    // setup TB0
-    TB0CTL |= TBCLR;        // Clear TB0
-    TB0CTL |= TBSSEL__ACLK; // select SMCLK
-    TB0CTL |= MC__UP;       // UP mode
-    //TB0CCR0 = 5384;         // set CCR0 value (period)
-
-    //TB0CCTL0 |= CCIE;       // local IRQ enable for CCR0
-    //TB0CCTL0 &= ~CCIFG;     // clear CCR0 flag
+void initTimerB0compare(){      // Setup TB0
+    TB0CTL |= TBCLR;            // Clear TB0
+    TB0CTL |= TBSSEL__ACLK;     // Select SMCLK
+    TB0CTL |= MC__UP;           // UP mode
 }
 
 void initTimerB1compare() {
     TB1CTL |= TBCLR;            // Clear TB1
     TB1CTL |= TBSSEL__SMCLK;    // Select SMCLK
     TB1CTL |= MC__UP;           // UP mode
-    TB1CCR0 = 347985;           // Set CCR0 value (read sensor every 333ms)
+    TB1CCR0 = 1049;           // Set CCR0 value (1 ms)
     TB1CCTL0 &= ~CCIFG;         // Clear TB1 flag
     TB1CCTL0 |= CCIE;           // Enable TB1 interrupt
 }
+
+void initTimerB2compare() {
+    TB2CTL |= TBCLR;            // Clear TB1
+    TB2CTL |= TBSSEL__SMCLK;    // Select SMCLK
+    TB2CTL |= MC__UP;           // UP mode
+    TB2CCR0 = 1049;           // Set CCR0 value (1 ms)
+    TB2CCTL0 &= ~CCIFG;         // Clear TB1 flag
+    TB2CCTL0 |= CCIE;           // Enable TB1 interrupt
+}
+
 
 void configureAdc() {
 
@@ -84,30 +88,25 @@ void configureAdc() {
 
 void columnInput(){
     P3DIR &= ~(BIT0 | BIT1 | BIT2 | BIT3);  // Initialize pins as input
-    P3REN |= (BIT0 | BIT1 | BIT2 | BIT3);  // Enable pull up/down resistor
-    P3OUT &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Configure resistors as pull down
+    P3REN |= (BIT0 | BIT1 | BIT2 | BIT3);   // Enable pull up/down resistor
+    P3OUT &= ~(BIT0 | BIT1 | BIT2 | BIT3);  // Configure resistors as pull down
 
-    P3DIR |= (BIT4 | BIT5 | BIT6 | BIT7);  // init pins as outputs
-    P3OUT |= (BIT4 | BIT5 | BIT6 | BIT7);  // set as outputs
+    P3DIR |= (BIT4 | BIT5 | BIT6 | BIT7);   // Init pins as outputs
+    P3OUT |= (BIT4 | BIT5 | BIT6 | BIT7);   // Set as outputs
 
-    P3IES &= ~(BIT0 | BIT1 | BIT2 | BIT3); // L-H edge sensitivity
-    P3IE |= (BIT0 | BIT1 | BIT2 | BIT3); // enable IRQs
+    P3IES &= ~(BIT0 | BIT1 | BIT2 | BIT3);  // L-H edge sensitivity
+    P3IE |= (BIT0 | BIT1 | BIT2 | BIT3);    // Enable IRQs
 
-    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Clear the P3 interrupt flags
+    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3);  // Clear the P3 interrupt flags
 }
 
 void rowInput(){
     P3DIR &= ~(BIT4 | BIT5 | BIT6 | BIT7);  // Initialize pins as input
-    P3REN |= (BIT4 | BIT5 | BIT6 | BIT7);  // Enable pull up/down resistor
-    P3OUT &= ~(BIT4 | BIT5 | BIT6 | BIT7); // Configure resistors as pull down
+    P3REN |= (BIT4 | BIT5 | BIT6 | BIT7);   // Enable pull up/down resistor
+    P3OUT &= ~(BIT4 | BIT5 | BIT6 | BIT7);  // Configure resistors as pull down
 
-    P3DIR |= (BIT0 | BIT1 | BIT2 | BIT3);  // init pins as outputs
-    P3OUT |= (BIT0 | BIT1 | BIT2 | BIT3);  // set as outputs
-
-    //P3IES &= ~(BIT4 | BIT5 | BIT6 | BIT7); // L-H edge sensitivity
-    //P3IE |= (BIT4 | BIT5 | BIT6 | BIT7); // enable IRQs
-
-    //P3IFG &= ~(BIT4 | BIT5 | BIT6 | BIT7); // Clear the P3 interrupt flags
+    P3DIR |= (BIT0 | BIT1 | BIT2 | BIT3);   // Init pins as outputs
+    P3OUT |= (BIT0 | BIT1 | BIT2 | BIT3);   // Set as outputs
 }
 
 
@@ -118,14 +117,15 @@ void delay1000() {
 
 void ADC_start() {
     ADCCTL0 |= ADCENC | ADCSC;              // Start sampling and conversion
-    __bis_SR_register(LPM3_bits | GIE);     // Enter LPM0, ADC_ISR force exits
+    while((ADCIFG & ADCIFG0) == 0);
+    //__bis_SR_register(LPM3_bits | GIE);     // Enter LPM0, ADC_ISR force exits
 }
 
 void ADC_stop() {
     ADCCTL0 &= ~(ADCENC | ADCON);           // Stop sampling
 }
 
-void sampleSensor() {
+void sampleSensor() {           // Shift stack of measured values right one, then record new temperature from sensor using ADC
 
     if(sampleCount >= 8) {
         ADC[8] = ADC[7];
@@ -154,11 +154,9 @@ void sampleSensor() {
 
     delay1000();                    // Wait for ADC ref
     ADC_start();                    // Start sample from ADC
-    ADC_stop();                     // Stop sample from ADC
+    //ADC_stop();                     // Stop sample from ADC
 
-    // Convert DN (ADCMEM0) to voltage to temperature (Celsius)
-
-    ADC[0] = -1481.96 + sqrt( 2.1962*pow(10, 6) + (1.8639 - (ADCMEM0/(pow(2, 10))*3.3)) / (3.88*pow(10, -6))  );
+    ADC_value = ADCMEM0;
 
 }
 
@@ -195,28 +193,24 @@ int getCharKey(int d) {
         case 0:
             return 0x00;
             break;
-        case -1:                        // '.'
+        case -1:                 // Use key 0x10 for '.'
             return 0x10;
-            break;
-        case -2:
-            return 0x12;        // Space holder for Kelvin temperature (no decimal)
-            break;
         default:
             return 0;
             break;
     }
 }
 
-void transmitTemperature() {
+void loadPacket() {
 
     int digit, j;
 
+    // Round Kelvin average
     avg = round(unrounded_avg+273.15);
 
     avg = abs(avg);
 
-    // Kelvin average i.e. 296
-
+   // Place each digit of Kelvin temperature into first three places of packet
    for(i = 0; i < 3; i++) {
        if(i == 0) {
            digit = avg / 100;
@@ -231,11 +225,11 @@ void transmitTemperature() {
            packet[i] = getCharKey(digit);
    }
 
+    // Round Celsius average
     avg = round(unrounded_avg*10);
     avg = fabs(avg);
 
-    //  Celsius average i.e. 26.2
-
+    // Place each digit of Celsius temperature (including decimal) into last four places of packet
     for(i = 3; i < 7; i++) {
         if(i == 3) {
             digit = avg / 100;
@@ -252,92 +246,56 @@ void transmitTemperature() {
         packet[i] = getCharKey(digit);
     }
 
-    //transmit();                             // Transmit temperature packet to LCD slave
+    packet[7] = n;
+
 
 }
 
 void getAverage() {
-    if(sampleCount > n - 1  && n > 0) {                          // Transmit temperature average if enough samples have been recorded for desired window size
+    //Convert DN (ADCMEM0) to voltage to temperature (Celsius)
+    ADC[0] = -1481.96 + sqrt( 2.1962*pow(10, 6) + (1.8639 - (ADC_value/(pow(2, 10))*3.3)) / (3.88*pow(10, -6))  );
 
-            for(i = 0; i < n; i++) {                            // Calculate moving average for window size n
-                avg = avg + ADC[i];
-            }
+    // Transmit temperature average if enough samples have been recorded for desired window size
+    if(sampleCount > n - 1  && n > 0) {
 
-            unrounded_avg = avg / n;
-            transmitTemperature();
-
+        // Calculate moving average for window size n
+        for(i = 0; i < n; i++) {
+            avg = avg + ADC[i];
+        }
+        unrounded_avg = avg / n;
+        loadPacket();
     }
 
-   avg = 0;                                                    // Reset moving average
-   sample = 0;                                                 // Reset sample indicator
+   avg = 0;                             // Reset moving average
+   sample = 0;                           // Reset sample indicator
 }
 
-int main(void)
-{
-    WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
+int main(void) {
 
-    initI2C_master();
-    initTimerB0compare();
+    WDTCTL = WDTPW | WDTHOLD;           // Stop watchdog timer
 
-    initTimerB1compare();       // Initialize Timer B1 for sampling temperature sensor every 333ms
-    configureAdc();             // Initialize ADC for receiving input signal from temperature sensor
+    P6DIR |= (BIT5 | BIT6);     // Set P6.6 as OUTPUT
+    P6OUT &= ~(BIT5 | BIT6);    // Clear P6.6
 
-    columnInput();
+    initI2C_master();                   // Intialize master for I2C transmission
+    initTimerB0compare();               // Initialize Timer B0 for getting keypad input
+    initTimerB1compare();               // Initialize Timer B1 for sampling temperature sensor  (1ms * 333);
+    initTimerB2compare();
+    configureAdc();                     // Initialize ADC for receiving input signal from temperature sensor
 
-    PM5CTL0 &= ~LOCKLPM5;   // turn on Digital I/O
+    columnInput();                      // Configure keypad columns to start as inputs
 
-    UCB1I2CSA = 0x0068;
-    UCB1IE |= UCTXIE0; // enable
+    PM5CTL0 &= ~LOCKLPM5;               // Turn on Digital I/O
+
+    UCB1I2CSA = 0x0068;                 // Set slave address
+    UCB1IE |= UCTXIE0;                  // Enable I2C TX interrupt
 
     __enable_interrupt();
 
     int i,k;
-    while(1){
-
-
-        //transmitTemperature();
-        //getAverage();
-        UCB1CTLW0 |= UCTXSTT;   // generate START condition
-        for(k=0; k<=20;k++){
-            for(i=0;i<=10000;i++){}
-        }
-
-//        for(k=0; k<=1;k++){
-//            for(i=0;i<=5000;i++){}
-//        }
-//        UCB1IE |= UCTXIE0; // enable
-//
-//        UCB1I2CSA = 0x0068;     // Slave address = 0x58
-//        UCB1CTLW0 |= UCTXSTT;   // generate START condition
-//        while((UCB1IFG & UCSTPIFG)==0);
-//        UCB1IFG &= ~UCSTPIFG;
-//
-//        UCB1IE &= ~UCTXIE0;
-//        for(i=0;i<=2000;i++){}
-
-
-
-    }
+    while(1){}
 
     return 0;
-}
-
-void displayUnlockPattern(){
-    int i;
-    for(i=0;i<=20000;i++){}
-    P6OUT &= ~BIT4;
-    for(i=0;i<=30000;i++){}
-    P6OUT &= ~BIT5;
-    for(i=0;i<=30000;i++){}
-    P6OUT &= ~BIT6;
-    for(i=0;i<=30000;i++){}
-    P6OUT |= (BIT6 | BIT5 | BIT4);
-    for(i=0;i<=30000;i++){}
-    P6OUT &= ~(BIT6 | BIT5 | BIT4);
-    for(i=0;i<=30000;i++){}
-    P6OUT |= (BIT6 | BIT5 | BIT4);
-    for(i=0;i<=30000;i++){}
-    P6OUT &= ~(BIT6 | BIT5 | BIT4);
 }
 
 int is_unlocked(char key){
@@ -357,7 +315,7 @@ int is_unlocked(char key){
         } else if(lock_state == 3){
             if(key == 0x20){
                 P6OUT |= BIT4;
-                displayUnlockPattern();
+                //displayUnlockPattern();
                 lock_state = 0;
             }
         }
@@ -365,25 +323,14 @@ int is_unlocked(char key){
     }
 }
 
-//void keyPressedAction(char pressed_key) {
-//    if(is_unlocked(pressed_key) == 1){
-//        packet[0] = pressed_key;
-//        UCB1IE |= UCTXIE0;
-//    }
-//
-//    columnInput();
-//    P3IFG &= ~(BIT0 | BIT1 | BIT2 | BIT3); // Clear the P3 interrupt flags
-//
-//}
 
 void keyPressedAction(char pressed_key) {
     if(is_unlocked(pressed_key) == 1){
         if(pressed_key == 0x11 || pressed_key == 0x17) {        // If #/*, transmit to LCD slave
             packet[0] = pressed_key;                            // Place #/* first in packet
             for(i = 1; i < 7; i++) {
-                packet[i] = 0x0A;                               // Fill the rest of packet with don't care values
+                packet[i] = 0x0A;                               // Fill the rest of packet with dummy values
             }
-            UCB1IE |= UCTXIE0;                                  // Enable I2C B0 TX interrupt
         } else {
             switch(pressed_key) {           // If not */#, set n value to key pressed (0-9)
                 case 0x87:
@@ -432,11 +379,10 @@ void keyPressedAction(char pressed_key) {
 }
 
 #pragma vector=PORT3_VECTOR
-__interrupt void ISR_PORT3(void){
-    /* enable timer for debouncing */
-    TB0CCTL0 |= CCIE;       // local IRQ enable for CCR0
-    TB0CCR0 = 500;         // set CCR0 value (period) // old value = 2384
-    TB0CCTL0 &= ~CCIFG;     // clear CCR0 flag to begin count
+__interrupt void ISR_PORT3(void){           // Enable timer for debouncing
+    TB0CCTL0 |= CCIE;                       // Local IRQ enable for CCR0
+    TB0CCR0 = 400;                          // Set CCR0 value (period) // old value = 2384
+    TB0CCTL0 &= ~CCIFG;                     // Clear CCR0 flag to begin count
 }
 
 #pragma vector=TIMER0_B0_VECTOR
@@ -455,27 +401,40 @@ __interrupt void ISR_TB0_CCR0(void){
     keyPressedAction(pressed_key);
 
     UCB1IE |= UCTXIE0;      // Enable I2C B0 TX interrupt
-
+    UCB1CTLW0 |= UCTXSTT;           // Generate START condition
 }
 
 
 #pragma vector = TIMER1_B0_VECTOR
 __interrupt void ISR_TB1_CCR0(void) {
-    TB1CCTL0 &= ~CCIE;                                          // Disable TB1
-    sample = 1;                                                 // Set sample indicator
+    sample = 1;                                             // Set sample indicator
 
-    tcnt++;
-    if(tcnt == 25){
+    sensor_ms_count++;
+    if(sensor_ms_count == 333){
+        P6OUT ^= BIT6;    // toggle P6.6
         sampleCount++;
-        sampleSensor();                                             // Sample temperature sensor
-
+        sampleSensor();                                     // Sample temperature sensor
         getAverage();
+        P6OUT ^= BIT6;    // toggle P6.6
 
-        tcnt = 0;
+        sensor_ms_count = 0;
+
     }
 
-    TB1CCTL0 &= ~CCIFG;                                         // Clear flag
-    TB1CCTL0 |= CCIE;                                           // Enable TB1
+    TB1CCTL0 &= ~CCIFG;                                     // Clear flag
+}
+
+#pragma vector = TIMER2_B0_VECTOR
+__interrupt void ISR_TB2_CCR0(void){
+    ms_count++;
+
+    if(ms_count == 1090){
+        P6OUT ^= BIT5;
+        UCB1CTLW0 |= UCTXSTT;           // Generate START condition
+        ms_count = 0;
+    }
+
+    TB0CCTL0 &= ~CCIFG;
 }
 
 #pragma vector = ADC_VECTOR
@@ -483,7 +442,7 @@ __interrupt void ISR_ADC(void) {
     switch(__even_in_range(ADCIV, ADCIV_ADCIFG)) {
         case ADCIV_ADCIFG:
             ADCIFG &= ~ADCIFG0;                             // Clear ADC flag
-            __bic_SR_register_on_exit(LPM3_bits + GIE);     // Exit low power mode
+            //__bic_SR_register_on_exit(LPM3_bits + GIE);     // Exit low power mode
             break;
         default:
             break;
@@ -491,7 +450,7 @@ __interrupt void ISR_ADC(void) {
 }
 
 #pragma vector=EUSCI_B1_VECTOR
-__interrupt void EUSCI_B1_TX_ISR(void){
+__interrupt void EUSCI_B1_TX_ISR(void){                     // Fill TX buffer with packet values
     if (j == (sizeof(packet)-1)){
         UCB1TXBUF = packet[j];
         j = 0;
@@ -500,4 +459,3 @@ __interrupt void EUSCI_B1_TX_ISR(void){
         j++;
     }
 }
-
