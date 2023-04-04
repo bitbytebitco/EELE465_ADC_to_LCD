@@ -274,8 +274,8 @@ int main(void) {
 
     WDTCTL = WDTPW | WDTHOLD;           // Stop watchdog timer
 
-    P6DIR |= (BIT5 | BIT6);     // Set P6.6 as OUTPUT
-    P6OUT &= ~(BIT5 | BIT6);    // Clear P6.6
+    P6DIR |= (BIT4 | BIT5 | BIT6);     // Set P6.6 as OUTPUT
+    P6OUT &= ~(BIT4 | BIT5 | BIT6);    // Clear P6.6
 
     initI2C_master();                   // Intialize master for I2C transmission
     initTimerB0compare();               // Initialize Timer B0 for getting keypad input
@@ -398,6 +398,8 @@ __interrupt void ISR_TB0_CCR0(void){
     row_holding = P3IN;
     pressed_key = col_holding + row_holding;
 
+    P6OUT |= BIT4; // green led on
+
     keyPressedAction(pressed_key);
 
     UCB1IE |= UCTXIE0;      // Enable I2C B0 TX interrupt
@@ -453,6 +455,7 @@ __interrupt void ISR_ADC(void) {
 __interrupt void EUSCI_B1_TX_ISR(void){                     // Fill TX buffer with packet values
     if (j == (sizeof(packet)-1)){
         UCB1TXBUF = packet[j];
+        P6OUT &= ~BIT4; // green led on
         j = 0;
     } else {
         UCB1TXBUF = packet[j];
